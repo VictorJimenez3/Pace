@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule - Pace Web App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="container">
+        <h1>Your Schedule</h1>
+        <p>Manage your appointments and events</p>
+        <button class="btn btn-primary" onclick="openAddScheduleModal()">Add New Event</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="schedule-container">
+        <div class="schedule-list" id="schedule-list">
+            <div class="loading">Loading schedule...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Schedule Modal -->
+<div id="addScheduleModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add New Event</h2>
+            <span class="close" onclick="closeAddScheduleModal()">&times;</span>
+        </div>
+        <form id="addScheduleForm">
+            <div class="form-group">
+                <label for="title">Title:</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+            <div class="form-group">
+                <label for="date">Date:</label>
+                <input type="date" id="date" name="date" required>
+            </div>
+            <div class="form-group">
+                <label for="time">Time:</label>
+                <input type="time" id="time" name="time" required>
+            </div>
+            <div class="form-group">
+                <label for="description">Description:</label>
+                <textarea id="description" name="description" rows="3"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeAddScheduleModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Event</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let scheduleData = [];
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSchedule();
+        
+        // Set today's date as default
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('date').value = today;
+    });
+
+    async function loadSchedule() {
+        try {
+            const response = await fetch('/api/schedule');
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                scheduleData = data.data;
+                renderSchedule();
+            } else {
+                throw new Error('Failed to load schedule');
+            }
+        } catch (error) {
+            console.error('Error loading schedule:', error);
+            document.getElementById('schedule-list').innerHTML = '<div class="error">Error loading schedule</div>';
+        }
+    }
+
+    function renderSchedule() {
+        const scheduleList = document.getElementById('schedule-list');
+        
+        if (scheduleData.length === 0) {
+            scheduleList.innerHTML = '<div class="empty-state">No events scheduled. Add your first event!</div>';
+            return;
+        }
+
+        const scheduleHTML = scheduleData.map(item => `
+            <div class="schedule-item">
+                <div class="schedule-date">
+                    <span class="date">${formatDate(item.date)}</span>
+                    <span class="time">${item.time}</span>
+                </div>
+                <div class="schedule-content">
+                    <h3>${item.title}</h3>
+                    <p>${item.description || 'No description'}</p>
+                </div>
+            </div>
+        `).join('');
+
+        scheduleList.innerHTML = scheduleHTML;
+    }
+
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            weekday: 'short', 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+        });
+    }
+
+    function openAddScheduleModal() {
+        document.getElementById('addScheduleModal').style.display = 'block';
+    }
+
+    function closeAddScheduleModal() {
+        document.getElementById('addScheduleModal').style.display = 'none';
+        document.getElementById('addScheduleForm').reset();
+    }
+
+    document.getElementById('addScheduleForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const scheduleItem = {
+            title: formData.get('title'),
+            date: formData.get('date'),
+            time: formData.get('time'),
+            description: formData.get('description')
+        };
+
+        try {
+            const response = await fetch('/api/schedule', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(scheduleItem)
+            });
+
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                closeAddScheduleModal();
+                loadSchedule(); // Reload the schedule
+                showNotification('Event added successfully!', 'success');
+            } else {
+                throw new Error(data.message || 'Failed to add event');
+            }
+        } catch (error) {
+            console.error('Error adding event:', error);
+            showNotification('Error adding event: ' + error.message, 'error');
+        }
+    });
+
+    // Close modal when clicking outside of it
+    window.addEventListener('click', function(event) {
+        const modal = document.getElementById('addScheduleModal');
+        if (event.target === modal) {
+            closeAddScheduleModal();
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Pace Web App{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1>Welcome to Pace</h1>
+        <p class="hero-description">Your personal productivity companion for managing schedules and resources</p>
+        <div class="hero-buttons">
+            <a href="{{ url_for('schedule') }}" class="btn btn-primary">View Schedule</a>
+            <a href="{{ url_for('resources') }}" class="btn btn-secondary">Browse Resources</a>
+        </div>
+    </div>
+</div>
+
+<div class="features-section">
+    <div class="container">
+        <h2>Features</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📅</div>
+                <h3>Schedule Management</h3>
+                <p>Keep track of your appointments, meetings, and important events in one place.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📚</div>
+                <h3>Resource Library</h3>
+                <p>Access curated resources, documentation, and helpful links for your projects.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Fast & Simple</h3>
+                <p>Clean, intuitive interface designed for productivity and ease of use.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="stats-section">
+    <div class="container">
+        <h2>Quick Stats</h2>
+        <div class="stats-grid">
+            <div class="stat-item">
+                <span class="stat-number" id="schedule-count">-</span>
+                <span class="stat-label">Scheduled Items</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="resources-count">-</span>
+                <span class="stat-label">Available Resources</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" id="app-status">-</span>
+                <span class="stat-label">System Status</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Load quick stats on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadQuickStats();
+    });
+
+    async function loadQuickStats() {
+        try {
+            // Get schedule count
+            const scheduleResponse = await fetch('/api/schedule');
+            const scheduleData = await scheduleResponse.json();
+            document.getElementById('schedule-count').textContent = scheduleData.data.length;
+
+            // Get resources count
+            const resourcesResponse = await fetch('/api/resources');
+            const resourcesData = await resourcesResponse.json();
+            document.getElementById('resources-count').textContent = resourcesData.data.length;
+
+            // Get app status
+            const statusResponse = await fetch('/api/status');
+            const statusData = await statusResponse.json();
+            document.getElementById('app-status').textContent = statusData.status === 'success' ? 'Online' : 'Offline';
+        } catch (error) {
+            console.error('Error loading stats:', error);
+            document.getElementById('schedule-count').textContent = 'Error';
+            document.getElementById('resources-count').textContent = 'Error';
+            document.getElementById('app-status').textContent = 'Offline';
+        }
+    }
+</script>
+{% endblock %}
