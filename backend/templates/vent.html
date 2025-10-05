@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block title %}Pace · Weekly Vent{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Weekly Vent</p>
+        <h1>Say it out loud. Pace will do the heavy lifting.</h1>
+        <p class="lede">Capture how the week really felt. Your voice becomes structured notes, so your future self—and agents—can respond with empathy.</p>
+    </div>
+    <div class="callout-card">
+        <h3>How it works</h3>
+        <ul>
+            <li>Hit record and share what’s on your mind.</li>
+            <li>We transcribe instantly and log it securely.</li>
+            <li>Ask the assistant for quick takeaways when you’re ready.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="vent-recorder">
+    <div class="recorder">
+        <div class="recorder-controls">
+            <button id="recordButton" class="primary-button icon">🎤 Start recording</button>
+            <button id="stopButton" class="ghost-button icon" disabled>⏹️ Stop</button>
+        </div>
+        <p id="ventStatus" class="status-text">Ready when you are.</p>
+        <div id="latestTranscription" class="transcription-preview">
+            <p class="placeholder">Your newest transcription will appear here.</p>
+        </div>
+        <div class="recorder-actions">
+            <button id="fetchTranscriptions" class="secondary-button">View history</button>
+            <button id="ventInsights" class="ghost-button">Ask for insights</button>
+        </div>
+    </div>
+
+    <div class="transcription-history" id="transcriptionHistory">
+        <h2>Recent reflections</h2>
+        <div class="history-list" id="transcriptionList">
+            <p class="placeholder">No past reflections yet. Your list will populate after your first vent.</p>
+        </div>
+    </div>
+</section>
+
+<section class="insights-panel">
+    <div class="panel-header">
+        <h2>Assistant insights</h2>
+        <p class="helper-text">We’ll summarize themes and suggest next moves you can share with your agent.</p>
+    </div>
+    <div class="insights-list" id="insightList">
+        <p class="placeholder">Tap “Ask for insights” after a recording to see highlights here.</p>
+    </div>
+</section>
+{% endblock %}

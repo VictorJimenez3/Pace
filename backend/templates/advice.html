@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}Pace · Pacing Advice{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Pacing Advice</p>
+        <h1>Design your week like a coach would.</h1>
+        <p class="lede">Your commitments need rhythm. Use these prompts and generated ideas to protect energy, focus, and recovery.</p>
+    </div>
+    <div class="callout-card">
+        <h3>Good pacing covers</h3>
+        <ul>
+            <li>Focus sprints for deep work.</li>
+            <li>Recovery breaks to reset your nervous system.</li>
+            <li>Connection blocks to keep relationships nourished.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="pacing-grid">
+    <article class="pacing-card">
+        <h2>Focus rituals</h2>
+        <p>Anchor your most strategic work when your energy peaks.</p>
+        <ul class="idea-list" id="focusIdeas">
+            <li>Try a Tuesday morning makers block (90 minutes, no meetings).</li>
+            <li>Protect your first calendar block after lunch for creative thinking.</li>
+        </ul>
+    </article>
+    <article class="pacing-card">
+        <h2>Recovery rituals</h2>
+        <p>Micro-breaks help you sustain performance and mood.</p>
+        <ul class="idea-list" id="recoveryIdeas">
+            <li>Schedule a 10-minute stretch session after your longest call.</li>
+            <li>Use a breathing exercise before presenting or pitching.</li>
+        </ul>
+    </article>
+    <article class="pacing-card">
+        <h2>Connection rituals</h2>
+        <p>Relationship fuel keeps the mission meaningful.</p>
+        <ul class="idea-list" id="connectionIdeas">
+            <li>Send one gratitude note mid-week to someone who helped you.</li>
+            <li>Book a shared break with a teammate to decompress.</li>
+        </ul>
+    </article>
+</section>
+
+<section class="insights-panel">
+    <div class="panel-header">
+        <h2>Assistant suggestions</h2>
+        <p class="helper-text">Pull fresh ideas from your agent whenever your schedule flexes.</p>
+        <button id="adviceRefresh" class="secondary-button">Generate new ideas</button>
+    </div>
+    <div class="insights-list" id="adviceInsightList">
+        <p class="placeholder">Hit “Generate new ideas” to see tailored pacing guidance.</p>
+    </div>
+</section>
+
+<section class="planner-builder">
+    <h2>Build your pacing plan</h2>
+    <div class="builder-grid">
+        <div class="builder-section">
+            <label for="planFocusBlock">Focus block</label>
+            <input type="text" id="planFocusBlock" placeholder="e.g. Deep work sprint Tuesday 9-10am">
+        </div>
+        <div class="builder-section">
+            <label for="planRecoveryBlock">Recovery block</label>
+            <input type="text" id="planRecoveryBlock" placeholder="e.g. Afternoon walk & podcast Thursday 2pm">
+        </div>
+        <div class="builder-section">
+            <label for="planConnectionBlock">Connection block</label>
+            <input type="text" id="planConnectionBlock" placeholder="e.g. Coffee catch-up Friday 11am">
+        </div>
+        <div class="builder-section">
+            <label for="planNotes">Notes for your agent</label>
+            <textarea id="planNotes" rows="3" placeholder="Context, goals, obstacles…"></textarea>
+        </div>
+    </div>
+    <div class="builder-actions">
+        <button id="savePacingPlan" class="primary-button">Save draft</button>
+        <p id="planStatus" class="helper-text">Drafts stay local for now—share with your agent when ready.</p>
+    </div>
+</section>
+{% endblock %}

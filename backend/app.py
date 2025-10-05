@@ -44,6 +44,28 @@ SCOPES = ['https://www.googleapis.com/auth/calendar',
           'https://www.googleapis.com/auth/userinfo.profile',
           'openid']
 
+SAMPLE_INSIGHTS = {
+    'vent': [
+        "Celebrate that you showed up today—consistency is progress.",
+        "Try naming the dominant emotion you felt this week; it can reduce its intensity.",
+        "Consider scheduling a five-minute walk after heavy meetings to reset your focus."
+    ],
+    'stress': [
+        "Pair high-effort tasks with restorative breaks to avoid compounding stress.",
+        "Look for one commitment you can delegate or postpone this week.",
+        "Check whether late-night screen time is affecting your recovery score."
+    ],
+    'pacing': [
+        "Block a protected hour for deep work, then follow it with a deliberate pause.",
+        "Use theme days (admin Monday, creative Tuesday, etc.) to reduce context switching.",
+        "Stack micro-breaks with existing habits—stretch while coffee brews or load meetings."
+    ],
+    'general': [
+        "Take a mindful breath: inhale for four counts, hold for four, exhale for six.",
+        "Document one small win from today to anchor your momentum."
+    ]
+}
+
 # Decorator to require login
 def login_required(f):
     @wraps(f)
@@ -54,17 +76,29 @@ def login_required(f):
     return decorated_function
 
 
+@app.context_processor
+def inject_user_context():
+    """Provide user/session context to all templates."""
+    return {
+        'logged_in': 'credentials' in session,
+        'user': session.get('user_info', {})
+    }
+
+
 @app.route('/')
 def index():
-    """Home page - shows login or calendar"""
-    if 'credentials' not in session:
-        return render_template('index.html', logged_in=False)
-    
-    # User is logged in
-    user_info = session.get('user_info', {})
-    return render_template('index.html', 
-                         logged_in=True, 
-                         user=user_info)
+    """Home page with onboarding and Google sign in."""
+    is_logged_in = 'credentials' in session
+    primary_cta = url_for('vent') if is_logged_in else url_for('login')
+    cta_label = 'Continue to Weekly Vent' if is_logged_in else 'Sign in with Google'
+
+    return render_template(
+        'index.html',
+        page_id='home',
+        active_page='home',
+        primary_cta=primary_cta,
+        cta_label=cta_label
+    )
 
 
 @app.route('/login')
@@ -134,7 +168,7 @@ def callback():
     
     session['firebase_uid'] = firebase_user.uid
     
-    return redirect(url_for('calendar'))
+    return redirect(url_for('vent'))
 
 
 @app.route('/logout')
@@ -142,6 +176,27 @@ def logout():
     """Clear session and logout"""
     session.clear()
     return redirect(url_for('index'))
+
+
+@app.route('/vent')
+@login_required
+def vent():
+    """Primary reflection page for voice venting."""
+    return render_template('vent.html', page_id='vent', active_page='vent')
+
+
+@app.route('/stress-check')
+@login_required
+def stress_check():
+    """Interactive stress score checkpoint."""
+    return render_template('stress.html', page_id='stress', active_page='stress')
+
+
+@app.route('/pacing-advice')
+@login_required
+def pacing_advice():
+    """Page with pacing guidance and routines."""
+    return render_template('advice.html', page_id='pacing', active_page='pacing')
 
 
 @app.route('/calendar')
@@ -168,9 +223,12 @@ def calendar():
     
     events = events_result.get('items', [])
     
-    return render_template('calendar.html', 
-                         events=events,
-                         user=session.get('user_info', {}))
+    return render_template(
+        'calendar.html',
+        events=events,
+        page_id='calendar',
+        active_page='calendar'
+    )
 
 
 @app.route('/api/events', methods=['GET'])
@@ -261,7 +319,11 @@ def delete_event(event_id):
     return jsonify({'success': True})
 
 #recieves audio and stores in DB
+# Support both new and legacy endpoint paths. Some older frontend code (or cached JS)
+# may still POST to '/transcribe'. To avoid 404 responses (which return an HTML page
+# and cause "Unexpected token '<'" when parsed as JSON), we expose both routes.
 @app.route('/api/transcribe', methods=['POST'])
+@app.route('/transcribe', methods=['POST'])  # legacy alias
 @login_required
 def transcribe_audio():
     """Record audio and transcribe with ElevenLabs"""
@@ -339,6 +401,23 @@ def get_transcriptions():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/insights', methods=['POST'])
+@login_required
+def get_insights():
+    """Return placeholder LLM-style insights for different focus areas."""
+    payload = request.json or {}
+    topic = payload.get('topic', 'general')
+    hints = payload.get('inputs', {})
+
+    suggestions = SAMPLE_INSIGHTS.get(topic, SAMPLE_INSIGHTS['general'])
+
+    return jsonify({
+        'topic': topic,
+        'inputs': hints,
+        'suggestions': suggestions
+    })
 
 
 if __name__ == '__main__':

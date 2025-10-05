@@ -1,151 +1,87 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Calendar</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 1000px; 
-            margin: 20px auto;
-            padding: 20px;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .user-info img {
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-        }
-        .event {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            background: #f9f9f9;
-        }
-        .event h3 {
-            margin: 0 0 10px 0;
-            color: #333;
-        }
-        .event-time {
-            color: #666;
-            font-size: 14px;
-        }
-        button {
-            background: #4285f4;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
-        }
-        button:hover {
-            background: #357ae8;
-        }
-        .add-event {
-            background: #34a853;
-        }
-        .add-event:hover {
-            background: #2d8e47;
-        }
-        #addEventForm {
-            display: none;
-            background: #fff;
-            border: 2px solid #4285f4;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-        }
-        input, textarea {
-            width: 100%;
-            padding: 8px;
-            margin: 8px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📅 Your Calendar</h1>
-        <div class="user-info">
-            <img src="{{ user.picture }}" alt="Profile">
-            <span>{{ user.name }}</span>
-            <a href="{{ url_for('logout') }}"><button>Logout</button></a>
-        </div>
+{% extends 'base.html' %}
+
+{% block title %}Pace · Calendar{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Calendar</p>
+        <h1>Shape your calendar around recovery, not just delivery.</h1>
+        <p class="lede">Glance at the month ahead, add intentional breaks, and sync with agents that know your capacity.</p>
     </div>
-
-    <button class="add-event" onclick="toggleAddEvent()">➕ Add Event</button>
-    <button onclick="refreshEvents()">🔄 Refresh</button>
-
-    <div id="addEventForm">
-        <h3>Add New Event</h3>
-        <input type="text" id="summary" placeholder="Event title">
-        <textarea id="description" placeholder="Description"></textarea>
-        <input type="number" id="hoursFromNow" value="1" min="0" placeholder="Hours from now">
-        <input type="number" id="duration" value="1" min="0.5" step="0.5" placeholder="Duration (hours)">
-        <button onclick="addEvent()">Create Event</button>
-        <button onclick="toggleAddEvent()">Cancel</button>
+    <div class="callout-card">
+        <h3>Tip</h3>
+        <p>Pair each intense block with a deliberate reset—even five minutes is enough to prevent context fatigue.</p>
     </div>
+</section>
 
-    <h2>Upcoming Events</h2>
-    <div id="events">
+<section class="calendar-actions">
+    <div class="event-form-wrapper">
+        <button id="toggleEventForm" class="secondary-button">➕ Add restorative block</button>
+        <form id="addEventForm" class="event-form" hidden>
+            <div class="field">
+                <label for="eventSummary">Title</label>
+                <input type="text" id="eventSummary" placeholder="Walk-and-reset or focus sprint" required>
+            </div>
+            <div class="field">
+                <label for="eventDescription">Description</label>
+                <textarea id="eventDescription" rows="2" placeholder="Optional context for future you"></textarea>
+            </div>
+            <div class="field-grid">
+                <div class="field">
+                    <label for="eventStartOffset">Starts in (hours)</label>
+                    <input type="number" id="eventStartOffset" min="0" step="0.5" value="1">
+                </div>
+                <div class="field">
+                    <label for="eventDuration">Duration (hours)</label>
+                    <input type="number" id="eventDuration" min="0.25" step="0.25" value="1">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary-button">Create event</button>
+                <button type="button" id="cancelEventForm" class="ghost-button">Cancel</button>
+            </div>
+            <p id="eventStatus" class="helper-text">Events sync directly to your primary Google Calendar.</p>
+        </form>
+    </div>
+    <div class="break-suggestions">
+        <h2>Suggested breaks</h2>
+        <p class="helper-text">Coming soon: request fresh breaks from your agent after each vent. For now, use these starter ideas.</p>
+        <button id="refreshBreaks" class="ghost-button">Refresh ideas</button>
+        <ul class="idea-list" id="breakSuggestions">
+            <li>Take a 7-minute stretch between back-to-back calls.</li>
+            <li>Mark a 30-minute focus block followed by a 5-minute reset.</li>
+            <li>Plan a short walk during your longest meeting day.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="calendar-feed">
+    <header class="feed-header">
+        <h2>Upcoming events</h2>
+        <button id="refreshEvents" class="ghost-button">Refresh</button>
+    </header>
+    <div class="event-list" id="eventList">
         {% if events %}
             {% for event in events %}
-            <div class="event">
-                <h3>{{ event.summary }}</h3>
-                <p class="event-time">
-                    📅 {{ event.start.get('dateTime', event.start.get('date')) }}
-                </p>
+            <article class="event-card">
+                <div class="event-summary">
+                    <h3>{{ event.summary or 'Untitled event' }}</h3>
+                    <p class="event-time">
+                        {{ event.start.get('dateTime', event.start.get('date')) }}
+                        {% if event.end %}
+                            · Ends {{ event.end.get('dateTime', event.end.get('date')) }}
+                        {% endif %}
+                    </p>
+                </div>
                 {% if event.description %}
-                    <p>{{ event.description }}</p>
+                <p class="event-description">{{ event.description }}</p>
                 {% endif %}
-            </div>
+            </article>
             {% endfor %}
         {% else %}
-            <p>No upcoming events found.</p>
+            <p class="placeholder">No upcoming events detected. Sync with Google to load your schedule.</p>
         {% endif %}
     </div>
-
-    <script>
-        function toggleAddEvent() {
-            const form = document.getElementById('addEventForm');
-            form.style.display = form.style.display === 'none' ? 'block' : 'none';
-        }
-
-        async function addEvent() {
-            const data = {
-                summary: document.getElementById('summary').value,
-                description: document.getElementById('description').value,
-                hours_from_now: parseInt(document.getElementById('hoursFromNow').value),
-                duration_hours: parseFloat(document.getElementById('duration').value)
-            };
-
-            const response = await fetch('/api/events/add', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                alert('Event added!');
-                location.reload();
-            }
-        }
-
-        function refreshEvents() {
-            location.reload();
-        }
-    </script>
-</body>
-</html>
+</section>
+{% endblock %}

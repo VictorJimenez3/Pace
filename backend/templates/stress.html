@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Pace · Stress Score{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Stress Check</p>
+        <h1>Track your load before it tracks you down.</h1>
+        <p class="lede">Quantify your stress, energy, and overwhelm with one quick scan. Pace will surface trends and recovery nudges.</p>
+    </div>
+    <div class="callout-card">
+        <h3>Why score it?</h3>
+        <p>Stress becomes easier to manage when you can measure it. Use this to decide when to ask for help, decline a meeting, or add recovery.</p>
+        <p class="mini">Coming soon: sync with HRV, sleep, and calendar signals for deeper context.</p>
+    </div>
+</section>
+
+<section class="stress-check">
+    <form id="stressForm" class="stress-form" novalidate>
+        <div class="slider-group">
+            <label for="stressLevel">How stressed have you felt this week?</label>
+            <input type="range" id="stressLevel" name="stress" min="0" max="10" value="4" step="1">
+            <div class="range-labels"><span>Low</span><span>High</span></div>
+        </div>
+        <div class="slider-group">
+            <label for="overwhelmLevel">How overwhelming is your schedule?</label>
+            <input type="range" id="overwhelmLevel" name="overwhelm" min="0" max="10" value="5" step="1">
+            <div class="range-labels"><span>Chill</span><span>Maxed</span></div>
+        </div>
+        <div class="slider-group">
+            <label for="energyLevel">Where's your energy landing?</label>
+            <input type="range" id="energyLevel" name="energy" min="0" max="10" value="6" step="1">
+            <div class="range-labels"><span>Drained</span><span>Charged</span></div>
+        </div>
+        <div class="textarea-group">
+            <label for="stressNotes">Anything specific contributing to this?</label>
+            <textarea id="stressNotes" name="notes" rows="3" placeholder="Big deadlines, travel, team shifts…"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="button" id="calculateStress" class="primary-button">Calculate score</button>
+            <button type="button" id="stressInsights" class="ghost-button">Ask for ideas</button>
+        </div>
+    </form>
+
+    <aside class="stress-results">
+        <div class="score-card">
+            <p class="eyebrow">Today’s score</p>
+            <h2 id="stressScore">0 / 100</h2>
+            <p id="stressInterpretation" class="helper-text">Run the check-in to see where you stand.</p>
+        </div>
+        <div class="trend-card">
+            <h3>Micro tips</h3>
+            <ul id="microTips">
+                <li>Mini walk between stacked meetings.</li>
+                <li>Block 25 minutes for inbox triage instead of doom scrolling.</li>
+                <li>Name the top stressor out loud to reduce the noise.</li>
+            </ul>
+        </div>
+    </aside>
+</section>
+
+<section class="insights-panel">
+    <div class="panel-header">
+        <h2>Assistant insights</h2>
+        <p class="helper-text">When you ask for ideas, Pace returns actionable suggestions tuned to your current score.</p>
+    </div>
+    <div class="insights-list" id="stressInsightList">
+        <p class="placeholder">Tap “Ask for ideas” to populate strategies here.</p>
+    </div>
+</section>
+{% endblock %}
