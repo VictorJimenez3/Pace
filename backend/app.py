@@ -13,6 +13,11 @@ from firebase_admin import credentials, auth, firestore
 import os
 import datetime
 from functools import wraps
+from io import BytesIO
+from elevenlabs.client import ElevenLabs
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'  # Change this!
@@ -24,6 +29,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 cred = credentials.Certificate(os.path.join(BASE_DIR, 'firebase-adminsdk.json'))
 firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+# ElevenLabs setup
+elevenlabs = ElevenLabs(
+    api_key=os.getenv("ELEVENLABS_API_KEY"),
+)
 
 # Google OAuth 2.0 configuration
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Remove in production!
@@ -249,6 +259,85 @@ def delete_event(event_id):
     ).execute()
     
     return jsonify({'success': True})
+
+#recieves audio and stores in DB
+@app.route('/api/transcribe', methods=['POST'])
+@login_required
+def transcribe_audio():
+    """Record audio and transcribe with ElevenLabs"""
+    audio_file = request.files.get('audio')
+    if not audio_file:
+        return jsonify({'error': 'No audio file provided'}), 400
+
+    try:
+        # Convert audio file to BytesIO for ElevenLabs
+        audio_data = BytesIO(audio_file.read())
+        
+        # Transcribe with ElevenLabs
+        transcription = elevenlabs.speech_to_text.convert(
+            file=audio_data,
+            model_id="scribe_v1",
+            tag_audio_events=True,
+            language_code="eng",
+            diarize=False,
+        )
+
+        # Get user info from session
+        user_info = session.get('user_info', {})
+        user_email = user_info.get('email', '')
+        user_uid = session.get('firebase_uid')
+
+        # Store in Firebase transcriptions collection
+        transcription_data = {
+            'text': transcription.text,
+            'created_at': datetime.datetime.utcnow(),
+            'audio_processed_at': datetime.datetime.utcnow(),
+            'language': transcription.language_code,
+            'user_id': user_uid,
+            'email': user_email
+        }
+
+        # Add to 'transcriptions' collection
+        transcription_ref = db.collection('transcriptions').add(transcription_data)
+        
+        return jsonify({
+            'text': transcription.text,
+            'transcription_id': transcription_ref[1].id,
+            'language': transcription.language_code,
+            'email': user_email,
+            'timestamp': transcription_data['created_at'].isoformat()
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+#returns transcriptions for front end
+@app.route('/api/transcriptions', methods=['GET'])
+@login_required
+def get_transcriptions():
+    """Get all transcriptions for the current user"""
+    user_uid = session.get('firebase_uid')
+    user_email = session.get('user_info', {}).get('email', '')
+    
+    try:
+        # Query transcriptions by user_id or email
+        transcriptions_ref = db.collection('transcriptions').where('email', '==', user_email).order_by('created_at', direction=firestore.Query.DESCENDING)
+        transcriptions = []
+        
+        for doc in transcriptions_ref.stream():
+            data = doc.to_dict()
+            transcriptions.append({
+                'id': doc.id,
+                'text': data.get('text', ''),
+                'created_at': data.get('created_at').isoformat() if data.get('created_at') else '',
+                'language': data.get('language', ''),
+                'email': data.get('email', '')
+            })
+        
+        return jsonify(transcriptions)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
