@@ -683,10 +683,11 @@ RECENT REFLECTIONS:
 {chr(10).join(f"- {t[:100]}..." for t in transcriptions) if transcriptions else "No recent reflections"}
 
 RULES:
+- NEVER SCHEDULE between 12am-7am
 - High stress (>66): Suggest 4-5 breaks per day
 - Medium stress (33-66): Suggest 2-3 breaks per day
 - Low stress (<33): Suggest 1-2 breaks per day
-- Avoid scheduling between 10pm-7am
+
 - Types: "Recovery Break" (15-30 min), "Focus Sprint" (60-90 min), "Connection Block" (30-60 min)
 - Schedule breaks between existing events when possible
 

@@ -319,8 +319,12 @@
 		const statusEl = document.getElementById('eventStatus');
 		const refreshEventsBtn = document.getElementById('refreshEvents');
 		const eventList = document.getElementById('eventList');
-		const refreshBreaksBtn = document.getElementById('refreshBreaks');
+		const generateBreaksBtn = document.getElementById('generateBreaks');
+		const autoScheduleBtn = document.getElementById('autoScheduleBreaks');
 		const breakList = document.getElementById('breakSuggestions');
+		const breakStatus = document.getElementById('breakStatus');
+
+		let currentBreakSuggestions = [];
 
 		if (toggleBtn) {
 			toggleBtn.addEventListener('click', () => {
@@ -379,7 +383,112 @@
 		});
 
 		refreshEventsBtn?.addEventListener('click', refreshEvents);
-		refreshBreaksBtn?.addEventListener('click', () => handleInsights('pacing', breakList));
+		
+		// Generate smart breaks (preview only)
+		generateBreaksBtn?.addEventListener('click', async () => {
+			await generateSmartBreaks(false);
+		});
+		
+		// Auto-schedule breaks to calendar
+		autoScheduleBtn?.addEventListener('click', async () => {
+			if (currentBreakSuggestions.length === 0) {
+				updateBreakStatus('Please generate breaks first before scheduling.', 'danger');
+				return;
+			}
+			
+			if (confirm(`This will add ${currentBreakSuggestions.length} smart breaks to your Google Calendar. Continue?`)) {
+				await generateSmartBreaks(true);
+			}
+		});
+
+		async function generateSmartBreaks(autoSchedule = false) {
+			if (!breakList) return;
+			
+			updateBreakStatus(autoSchedule ? 'Scheduling breaks to your calendar...' : 'Generating smart breaks...', 'info');
+			breakList.innerHTML = '<p class="placeholder">Analyzing your calendar and stress patterns...</p>';
+			
+			try {
+				const response = await fetch('/api/smart-breaks', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						auto_schedule: autoSchedule
+					}),
+				});
+
+				const contentType = response.headers.get('content-type') || '';
+				if (!contentType.includes('application/json')) {
+					throw new Error('Please log in to generate smart breaks');
+				}
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data.error || 'Failed to generate breaks');
+				}
+
+				currentBreakSuggestions = data.suggestions || [];
+
+				if (currentBreakSuggestions.length === 0) {
+					breakList.innerHTML = '<p class="placeholder">No break suggestions available. Try recording a vent or completing the stress check first.</p>';
+					updateBreakStatus('', '');
+					return;
+				}
+
+				// Display suggestions
+				breakList.innerHTML = '';
+				currentBreakSuggestions.forEach((breakItem, index) => {
+					const card = document.createElement('div');
+					card.className = 'break-card';
+					const now = new Date();
+					const scheduledTime = new Date(now.getTime() + breakItem.hours_from_now * 60 * 60 * 1000);
+					
+					card.innerHTML = `
+						<div class="break-header">
+							<h4>${getBreakEmoji(breakItem.type)} ${breakItem.type}</h4>
+							<span class="break-duration">${breakItem.duration_hours}h</span>
+						</div>
+						<p class="break-time">⏰ ${scheduledTime.toLocaleString()}</p>
+						<p class="break-description">${sanitize(breakItem.description || '')}</p>
+					`;
+					breakList.appendChild(card);
+				});
+
+				if (autoSchedule) {
+					const scheduledCount = data.scheduled_count || 0;
+					updateBreakStatus(`✅ Successfully added ${scheduledCount} breaks to your calendar!`, 'success');
+					// Refresh events to show new breaks
+					setTimeout(() => refreshEvents(), 1000);
+				} else {
+					updateBreakStatus(`Generated ${currentBreakSuggestions.length} smart breaks. Click "Auto-Schedule" to add them to your calendar.`, 'success');
+				}
+				
+			} catch (error) {
+				breakList.innerHTML = `<p class="placeholder">Error: ${sanitize(error.message)}</p>`;
+				updateBreakStatus('Failed to generate breaks. Please try again.', 'danger');
+			}
+		}
+		
+		function getBreakEmoji(type) {
+			const emojiMap = {
+				'Recovery Break': '🌿',
+				'Focus Sprint': '🎯',
+				'Connection Block': '💬'
+			};
+			return emojiMap[type] || '⏸️';
+		}
+		
+		function updateBreakStatus(message, tone = 'info') {
+			if (!breakStatus) return;
+			const tones = {
+				info: '#a29bfe',
+				danger: '#ff6b6b',
+				success: '#00cec9',
+			};
+			breakStatus.textContent = message;
+			breakStatus.style.color = tones[tone] || tones.info;
+		}
 
 		async function refreshEvents() {
 			if (!eventList) return;
@@ -396,8 +505,22 @@
 					return;
 				}
 
+				// Filter out past events - only show present and future
+				const now = new Date();
+				const upcomingEvents = data.filter((event) => {
+					const eventTime = event.start?.dateTime || event.start?.date;
+					if (!eventTime) return false;
+					const eventDate = new Date(eventTime);
+					return eventDate >= now;
+				});
+
+				if (upcomingEvents.length === 0) {
+					eventList.innerHTML = '<p class="placeholder">No upcoming events in the next month.</p>';
+					return;
+				}
+
 				eventList.innerHTML = '';
-				data.forEach((event) => {
+				upcomingEvents.forEach((event) => {
 					const card = document.createElement('article');
 					card.className = 'event-card';
 					const start = getEventDate(event.start);

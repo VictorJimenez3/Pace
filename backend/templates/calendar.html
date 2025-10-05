@@ -45,14 +45,19 @@
         </form>
     </div>
     <div class="break-suggestions">
-        <h2>Suggested breaks</h2>
-        <p class="helper-text">Coming soon: request fresh breaks from your agent after each vent. For now, use these starter ideas.</p>
-        <button id="refreshBreaks" class="ghost-button">Refresh ideas</button>
-        <ul class="idea-list" id="breakSuggestions">
-            <li>Take a 7-minute stretch between back-to-back calls.</li>
-            <li>Mark a 30-minute focus block followed by a 5-minute reset.</li>
-            <li>Plan a short walk during your longest meeting day.</li>
-        </ul>
+        <h2>Smart Break Scheduler</h2>
+        <p class="helper-text">Let AI analyze your calendar, stress levels, and recent reflections to suggest optimal breaks.</p>
+        
+        <div class="scheduler-actions">
+            <button id="generateBreaks" class="primary-button">🧠 Generate Smart Breaks</button>
+            <button id="autoScheduleBreaks" class="secondary-button">📅 Auto-Schedule to Calendar</button>
+        </div>
+        
+        <div id="breakSuggestions" class="break-list">
+            <p class="placeholder">Click "Generate Smart Breaks" to see personalized suggestions based on your stress level and calendar density.</p>
+        </div>
+        
+        <p id="breakStatus" class="helper-text"></p>
     </div>
 </section>
 

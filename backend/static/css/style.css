@@ -572,6 +572,69 @@ input:focus {
 	color: var(--text-muted);
 }
 
+/* Break cards for smart scheduling */
+.scheduler-actions {
+	display: flex;
+	gap: 1rem;
+	margin-bottom: 1.5rem;
+	flex-wrap: wrap;
+}
+
+.break-list {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	margin-top: 1.5rem;
+}
+
+.break-card {
+	background: linear-gradient(135deg, rgba(108, 92, 231, 0.1), rgba(9, 132, 227, 0.08));
+	border-radius: calc(var(--radius) - 4px);
+	padding: 1.25rem;
+	border: 1px solid rgba(108, 92, 231, 0.2);
+	transition: all 0.2s ease;
+}
+
+.break-card:hover {
+	border-color: rgba(108, 92, 231, 0.4);
+	transform: translateY(-2px);
+}
+
+.break-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 0.5rem;
+}
+
+.break-header h4 {
+	margin: 0;
+	font-size: 1rem;
+	font-weight: 600;
+}
+
+.break-duration {
+	background: var(--accent-soft);
+	color: var(--accent-strong);
+	padding: 0.25rem 0.75rem;
+	border-radius: 12px;
+	font-size: 0.85rem;
+	font-weight: 500;
+}
+
+.break-time {
+	color: var(--text-muted);
+	font-size: 0.9rem;
+	margin: 0.5rem 0;
+}
+
+.break-description {
+	color: var(--text);
+	font-size: 0.95rem;
+	line-height: 1.5;
+	margin: 0.75rem 0 0;
+}
+
 .site-footer {
 	padding: 2rem 8vw 3rem;
 	text-align: center;
