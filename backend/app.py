@@ -287,18 +287,18 @@ def transcribe_audio():
         user_email = user_info.get('email', '')
         user_uid = session.get('firebase_uid')
 
-        # Store in Firebase transcriptions collection
+        # Store in Firebase under user's document (consistent with schedule data)
         transcription_data = {
             'text': transcription.text,
             'created_at': datetime.datetime.utcnow(),
             'audio_processed_at': datetime.datetime.utcnow(),
             'language': transcription.language_code,
-            'user_id': user_uid,
             'email': user_email
         }
 
-        # Add to 'transcriptions' collection
-        transcription_ref = db.collection('transcriptions').add(transcription_data)
+        # Add to user's transcriptions subcollection
+        user_ref = db.collection('users').document(user_uid)
+        transcription_ref = user_ref.collection('transcriptions').add(transcription_data)
         
         return jsonify({
             'text': transcription.text,
@@ -320,8 +320,9 @@ def get_transcriptions():
     user_email = session.get('user_info', {}).get('email', '')
     
     try:
-        # Query transcriptions by user_id or email
-        transcriptions_ref = db.collection('transcriptions').where('email', '==', user_email).order_by('created_at', direction=firestore.Query.DESCENDING)
+        # Query transcriptions from user's subcollection (no index needed)
+        user_ref = db.collection('users').document(user_uid)
+        transcriptions_ref = user_ref.collection('transcriptions').order_by('created_at', direction=firestore.Query.DESCENDING)
         transcriptions = []
         
         for doc in transcriptions_ref.stream():
