@@ -169,6 +169,71 @@
 		}
 	}
 
+	// TTS functionality for insights
+	let currentAudio = null;
+
+	async function playInsightAudio(text, buttonEl) {
+		try {
+			// Stop any currently playing audio
+			if (currentAudio) {
+				currentAudio.pause();
+				currentAudio = null;
+				// Reset all buttons
+				document.querySelectorAll('.tts-button').forEach(btn => {
+					btn.innerHTML = '🔊';
+					btn.disabled = false;
+				});
+			}
+
+			// Update button state
+			buttonEl.innerHTML = '⏸️';
+			buttonEl.disabled = true;
+
+			// Fetch audio from backend
+			const response = await fetch('/api/insights/tts', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ text }),
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to generate audio');
+			}
+
+			// Create audio element from blob
+			const audioBlob = await response.blob();
+			const audioUrl = URL.createObjectURL(audioBlob);
+			currentAudio = new Audio(audioUrl);
+
+			// Handle playback end
+			currentAudio.onended = () => {
+				buttonEl.innerHTML = '🔊';
+				buttonEl.disabled = false;
+				currentAudio = null;
+				URL.revokeObjectURL(audioUrl);
+			};
+
+			// Handle errors
+			currentAudio.onerror = () => {
+				buttonEl.innerHTML = '🔊';
+				buttonEl.disabled = false;
+				currentAudio = null;
+				URL.revokeObjectURL(audioUrl);
+			};
+
+			// Play audio
+			await currentAudio.play();
+
+		} catch (error) {
+			console.error('TTS error:', error);
+			buttonEl.innerHTML = '🔊';
+			buttonEl.disabled = false;
+			alert('Failed to play audio. Please try again.');
+		}
+	}
+
 	async function handleInsights(topic, listEl, payload = {}) {
 		if (!listEl) return;
 		const isBareList = listEl.tagName === 'UL';
@@ -206,18 +271,47 @@
 				return;
 			}
 
+			// Add TTS controls for vent and stress topics
+			const enableTTS = (topic === 'vent' || topic === 'stress');
+
 			if (isBareList) {
 				listEl.innerHTML = '';
-				data.suggestions.forEach((suggestion) => {
+				data.suggestions.forEach((suggestion, index) => {
 					const item = document.createElement('li');
 					item.textContent = suggestion;
+					
+					if (enableTTS) {
+						const speakerBtn = document.createElement('button');
+						speakerBtn.className = 'tts-button';
+						speakerBtn.innerHTML = '🔊';
+						speakerBtn.title = 'Listen to this insight';
+						speakerBtn.onclick = (e) => {
+							e.preventDefault();
+							playInsightAudio(suggestion, speakerBtn);
+						};
+						item.appendChild(speakerBtn);
+					}
+					
 					listEl.appendChild(item);
 				});
 			} else {
 				const list = document.createElement('ul');
-				data.suggestions.forEach((suggestion) => {
+				data.suggestions.forEach((suggestion, index) => {
 					const item = document.createElement('li');
 					item.textContent = suggestion;
+					
+					if (enableTTS) {
+						const speakerBtn = document.createElement('button');
+						speakerBtn.className = 'tts-button';
+						speakerBtn.innerHTML = '🔊';
+						speakerBtn.title = 'Listen to this insight';
+						speakerBtn.onclick = (e) => {
+							e.preventDefault();
+							playInsightAudio(suggestion, speakerBtn);
+						};
+						item.appendChild(speakerBtn);
+					}
+					
 					list.appendChild(item);
 				});
 				listEl.innerHTML = '';

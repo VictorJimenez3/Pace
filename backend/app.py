@@ -3,7 +3,7 @@ Flask App with Firebase Auth + Google Calendar API
 Install: pip install flask google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client firebase-admin
 """
 
-from flask import Flask, render_template, redirect, url_for, session, request, jsonify
+from flask import Flask, render_template, redirect, url_for, session, request, jsonify, Response
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -570,6 +570,44 @@ Provide ONLY a numbered list of 3 tips, each on a new line."""
             'topic': topic,
             'suggestions': SAMPLE_INSIGHTS.get(topic, SAMPLE_INSIGHTS['general'])
         })
+
+
+@app.route('/api/insights/tts', methods=['POST'])
+@login_required
+def insights_text_to_speech():
+    """Generate audio for insights using ElevenLabs TTS"""
+    try:
+        payload = request.json or {}
+        text = payload.get('text', '')
+        
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        # Generate speech with ElevenLabs
+        audio_generator = elevenlabs.text_to_speech.convert(
+            text=text,
+            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam voice - calm and professional
+            model_id="eleven_multilingual_v2"
+        )
+        
+        # Collect audio chunks into bytes
+        audio_data = b''.join(audio_generator)
+        
+        # Return audio file
+        return Response(
+            audio_data,
+            mimetype='audio/mpeg',
+            headers={
+                'Content-Disposition': 'inline; filename="insight.mp3"',
+                'Content-Type': 'audio/mpeg'
+            }
+        )
+        
+    except Exception as e:
+        print(f"Error generating TTS: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # ============================================================================
