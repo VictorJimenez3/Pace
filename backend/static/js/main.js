@@ -441,8 +441,9 @@
 				currentBreakSuggestions.forEach((breakItem, index) => {
 					const card = document.createElement('div');
 					card.className = 'break-card';
-					const now = new Date();
-					const scheduledTime = new Date(now.getTime() + breakItem.hours_from_now * 60 * 60 * 1000);
+					
+					// Parse the scheduled time
+					const scheduledTime = new Date(breakItem.scheduled_time);
 					
 					card.innerHTML = `
 						<div class="break-header">

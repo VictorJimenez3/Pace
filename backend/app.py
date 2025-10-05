@@ -212,9 +212,9 @@ def calendar():
     # Build calendar service
     service = build('calendar', 'v3', credentials=credentials)
     
-    # Get events from 1 month past to 1 month future
+    # Get events from now to 1 month future
     now = datetime.datetime.utcnow()
-    time_min = (now - datetime.timedelta(days=30)).isoformat() + 'Z'
+    time_min = now.isoformat() + 'Z'
     time_max = (now + datetime.timedelta(days=30)).isoformat() + 'Z'
     
     events_result = service.events().list(
@@ -226,6 +226,24 @@ def calendar():
     ).execute()
     
     events = events_result.get('items', [])
+    
+    # Format dates for display
+    for event in events:
+        if event.get('start'):
+            if 'dateTime' in event['start']:
+                dt = datetime.datetime.fromisoformat(event['start']['dateTime'].replace('Z', '+00:00'))
+                event['start']['formatted'] = dt.strftime('%B %d, %Y, %I:%M %p')
+            elif 'date' in event['start']:
+                dt = datetime.datetime.strptime(event['start']['date'], '%Y-%m-%d')
+                event['start']['formatted'] = dt.strftime('%B %d, %Y')
+        
+        if event.get('end'):
+            if 'dateTime' in event['end']:
+                dt = datetime.datetime.fromisoformat(event['end']['dateTime'].replace('Z', '+00:00'))
+                event['end']['formatted'] = dt.strftime('%B %d, %Y, %I:%M %p')
+            elif 'date' in event['end']:
+                dt = datetime.datetime.strptime(event['end']['date'], '%Y-%m-%d')
+                event['end']['formatted'] = dt.strftime('%B %d, %Y')
     
     return render_template(
         'calendar.html',
@@ -671,37 +689,66 @@ def generate_smart_breaks():
         stress_score = payload.get('stress_score', 50)
         auto_schedule = payload.get('auto_schedule', False)
         
+        # Build detailed calendar schedule for the LLM
+        now = datetime.datetime.utcnow()
+        calendar_schedule = []
+        for event in events[:20]:  # Limit to next 20 events for context
+            start = event.get('start', {})
+            end = event.get('end', {})
+            start_time = start.get('dateTime', start.get('date', ''))
+            end_time = end.get('dateTime', end.get('date', ''))
+            if start_time:
+                calendar_schedule.append({
+                    'title': event.get('summary', 'Busy'),
+                    'start': start_time,
+                    'end': end_time
+                })
+        
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        prompt = f"""You are a smart calendar assistant. Based on the user's data, suggest break times for the next 7 days.
+        # Determine target number of breaks based on stress
+        if stress_score > 66:
+            target_breaks = "3-4"
+            break_philosophy = "High stress detected. Prioritize recovery and prevent burnout."
+        elif stress_score > 33:
+            target_breaks = "2-3"
+            break_philosophy = "Moderate stress. Balance productivity with recovery."
+        else:
+            target_breaks = "1-2"
+            break_philosophy = "Low stress. Maintain your momentum with strategic pauses."
+        
+        prompt = f"""You are an intelligent calendar assistant. Analyze the user's schedule and suggest {target_breaks} optimal break times over the next 3 days.
 
-STRESS LEVEL: {stress_score}/100
-UPCOMING EVENTS: {len(events)} events in next 7 days
-CALENDAR DENSITY: {event_density}
+USER CONTEXT:
+- Stress Level: {stress_score}/100 ({break_philosophy})
+- Recent reflections: {chr(10).join(f'  "{t[:80]}..."' for t in transcriptions[:3]) if transcriptions else "None yet"}
 
-RECENT REFLECTIONS:
-{chr(10).join(f"- {t[:100]}..." for t in transcriptions) if transcriptions else "No recent reflections"}
+UPCOMING CALENDAR (next 7 days):
+{chr(10).join(f'- {evt["title"]}: {evt["start"]} to {evt["end"]}' for evt in calendar_schedule[:15]) if calendar_schedule else "No events scheduled"}
 
-RULES:
-- NEVER SCHEDULE between 12am-7am
-- High stress (>66): Suggest 4-5 breaks per day
-- Medium stress (33-66): Suggest 2-3 breaks per day
-- Low stress (<33): Suggest 1-2 breaks per day
+YOUR TASK:
+Suggest {target_breaks} break times that:
+1. AVOID conflicts - do NOT schedule during existing events
+2. Are at CONVENIENT times (morning: 9-11am, lunch: 12-2pm, afternoon: 3-5pm)
+3. Use specific dates/times (e.g., "2025-10-06T14:00:00"), NOT relative times
+4. Match the user's stress level and reflection themes
 
-- Types: "Recovery Break" (15-30 min), "Focus Sprint" (60-90 min), "Connection Block" (30-60 min)
-- Schedule breaks between existing events when possible
+BREAK TYPES:
+- Recovery Break (15-30 min): Mental reset, walk, stretch
+- Focus Sprint (60-90 min): Deep work block before difficult tasks  
+- Connection Block (30-60 min): Social time, calls, relationships
 
-Provide a JSON array of break suggestions with this format:
+OUTPUT FORMAT (JSON only, no markdown):
 [
   {{
     "type": "Recovery Break",
+    "scheduled_time": "2025-10-06T14:30:00",
     "duration_hours": 0.5,
-    "hours_from_now": 2,
-    "description": "Brief description of what to do"
+    "description": "Quick walk after your meeting block"
   }}
 ]
 
-Provide ONLY valid JSON, no other text."""
+Return ONLY the JSON array. Current UTC time is {now.isoformat()}Z."""
 
         response = model.generate_content(prompt)
         response_text = response.text.strip()
@@ -710,30 +757,72 @@ Provide ONLY valid JSON, no other text."""
         import json
         import re
         
+        # Remove markdown code blocks if present
+        response_text = re.sub(r'```json\s*', '', response_text)
+        response_text = re.sub(r'```\s*', '', response_text)
+        
         # Try to find JSON array in response
         json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if json_match:
             breaks_data = json.loads(json_match.group())
         else:
-            # Fallback: create default breaks
-            num_breaks = 2 if stress_score < 33 else (3 if stress_score < 66 else 4)
+            # Fallback: create smart default breaks
             breaks_data = []
-            for i in range(num_breaks):
-                breaks_data.append({
-                    "type": "Recovery Break" if i % 2 == 0 else "Focus Sprint",
-                    "duration_hours": 0.5,
-                    "hours_from_now": 8 + (i * 3),
-                    "description": "Take a mindful break to recharge"
-                })
+            tomorrow = now + datetime.timedelta(days=1)
+            tomorrow_2pm = tomorrow.replace(hour=14, minute=0, second=0, microsecond=0)
+            breaks_data.append({
+                "type": "Recovery Break",
+                "scheduled_time": tomorrow_2pm.isoformat(),
+                "duration_hours": 0.5,
+                "description": "Afternoon mental reset - take a short walk or stretch"
+            })
         
-        # Filter out breaks that would be scheduled in night hours (10pm-7am)
-        now = datetime.datetime.utcnow()
+        # Validate and filter breaks
         filtered_breaks = []
-        for break_item in breaks_data:
-            scheduled_time = now + datetime.timedelta(hours=break_item['hours_from_now'])
-            hour = scheduled_time.hour
-            if 7 <= hour < 22:  # Only between 7am-10pm
-                filtered_breaks.append(break_item)
+        for break_item in breaks_data[:4]:  # Limit to 4 suggestions max
+            try:
+                scheduled_time_str = break_item.get('scheduled_time', '')
+                if not scheduled_time_str:
+                    continue
+                    
+                # Parse the scheduled time
+                scheduled_time = datetime.datetime.fromisoformat(scheduled_time_str.replace('Z', ''))
+                
+                # Skip if in the past
+                if scheduled_time < now:
+                    continue
+                
+                # Skip if during sleeping hours (12am-7am)
+                if 0 <= scheduled_time.hour < 7:
+                    continue
+                
+                # Check for conflicts with existing events
+                duration = break_item.get('duration_hours', 0.5)
+                break_end = scheduled_time + datetime.timedelta(hours=duration)
+                
+                has_conflict = False
+                for event in events:
+                    event_start_str = event.get('start', {}).get('dateTime', event.get('start', {}).get('date', ''))
+                    event_end_str = event.get('end', {}).get('dateTime', event.get('end', {}).get('date', ''))
+                    
+                    if event_start_str and event_end_str:
+                        try:
+                            event_start = datetime.datetime.fromisoformat(event_start_str.replace('Z', ''))
+                            event_end = datetime.datetime.fromisoformat(event_end_str.replace('Z', ''))
+                            
+                            # Check for overlap
+                            if (scheduled_time < event_end and break_end > event_start):
+                                has_conflict = True
+                                break
+                        except:
+                            continue
+                
+                if not has_conflict:
+                    filtered_breaks.append(break_item)
+                    
+            except Exception as e:
+                print(f"Error processing break: {e}")
+                continue
         
         # Auto-schedule if requested
         scheduled_events = []
@@ -741,16 +830,24 @@ Provide ONLY valid JSON, no other text."""
             credentials = Credentials(**credentials_dict)
             service = build('calendar', 'v3', credentials=credentials)
             
-            for break_item in filtered_breaks[:5]:  # Limit to 5 auto-scheduled breaks
+            for break_item in filtered_breaks[:3]:  # Only schedule top 3
                 try:
-                    start_time = now + datetime.timedelta(hours=break_item['hours_from_now'])
-                    end_time = start_time + datetime.timedelta(hours=break_item['duration_hours'])
+                    scheduled_time = datetime.datetime.fromisoformat(break_item['scheduled_time'].replace('Z', ''))
+                    duration = break_item.get('duration_hours', 0.5)
+                    end_time = scheduled_time + datetime.timedelta(hours=duration)
+                    
+                    emoji_map = {
+                        'Recovery Break': '🌿',
+                        'Focus Sprint': '🎯',
+                        'Connection Block': '💬'
+                    }
+                    emoji = emoji_map.get(break_item['type'], '⏸️')
                     
                     event = {
-                        'summary': f"🌿 {break_item['type']}",
+                        'summary': f"{emoji} {break_item['type']}",
                         'description': break_item.get('description', ''),
                         'start': {
-                            'dateTime': start_time.isoformat() + 'Z',
+                            'dateTime': scheduled_time.isoformat() + 'Z',
                             'timeZone': 'UTC',
                         },
                         'end': {
@@ -773,6 +870,8 @@ Provide ONLY valid JSON, no other text."""
         
     except Exception as e:
         print(f"Error generating smart breaks: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'suggestions': [],
             'error': str(e)

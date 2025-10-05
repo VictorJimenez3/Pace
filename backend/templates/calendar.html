@@ -73,9 +73,9 @@
                 <div class="event-summary">
                     <h3>{{ event.summary or 'Untitled event' }}</h3>
                     <p class="event-time">
-                        {{ event.start.get('dateTime', event.start.get('date')) }}
+                        {{ event.start.get('formatted', event.start.get('dateTime', event.start.get('date'))) }}
                         {% if event.end %}
-                            · Ends {{ event.end.get('dateTime', event.end.get('date')) }}
+                            · Ends {{ event.end.get('formatted', event.end.get('dateTime', event.end.get('date'))) }}
                         {% endif %}
                     </p>
                 </div>
