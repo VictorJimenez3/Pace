@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Calendar</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .user-info img {
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+        }
+        .event {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .event h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .event-time {
+            color: #666;
+            font-size: 14px;
+        }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #357ae8;
+        }
+        .add-event {
+            background: #34a853;
+        }
+        .add-event:hover {
+            background: #2d8e47;
+        }
+        #addEventForm {
+            display: none;
+            background: #fff;
+            border: 2px solid #4285f4;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📅 Your Calendar</h1>
+        <div class="user-info">
+            <img src="{{ user.picture }}" alt="Profile">
+            <span>{{ user.name }}</span>
+            <a href="{{ url_for('logout') }}"><button>Logout</button></a>
+        </div>
+    </div>
+
+    <button class="add-event" onclick="toggleAddEvent()">➕ Add Event</button>
+    <button onclick="refreshEvents()">🔄 Refresh</button>
+
+    <div id="addEventForm">
+        <h3>Add New Event</h3>
+        <input type="text" id="summary" placeholder="Event title">
+        <textarea id="description" placeholder="Description"></textarea>
+        <input type="number" id="hoursFromNow" value="1" min="0" placeholder="Hours from now">
+        <input type="number" id="duration" value="1" min="0.5" step="0.5" placeholder="Duration (hours)">
+        <button onclick="addEvent()">Create Event</button>
+        <button onclick="toggleAddEvent()">Cancel</button>
+    </div>
+
+    <h2>Upcoming Events</h2>
+    <div id="events">
+        {% if events %}
+            {% for event in events %}
+            <div class="event">
+                <h3>{{ event.summary }}</h3>
+                <p class="event-time">
+                    📅 {{ event.start.get('dateTime', event.start.get('date')) }}
+                </p>
+                {% if event.description %}
+                    <p>{{ event.description }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>No upcoming events found.</p>
+        {% endif %}
+    </div>
+
+    <script>
+        function toggleAddEvent() {
+            const form = document.getElementById('addEventForm');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function addEvent() {
+            const data = {
+                summary: document.getElementById('summary').value,
+                description: document.getElementById('description').value,
+                hours_from_now: parseInt(document.getElementById('hoursFromNow').value),
+                duration_hours: parseFloat(document.getElementById('duration').value)
+            };
+
+            const response = await fetch('/api/events/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                alert('Event added!');
+                location.reload();
+            }
+        }
+
+        function refreshEvents() {
+            location.reload();
+        }
+    </script>
+</body>
+</html>

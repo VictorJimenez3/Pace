@@ -1,0 +1,7 @@
+# Backend JSON files
+backend/*.json
+
+# Backend virtual environment
+backend/venv/
+
+backend/.env

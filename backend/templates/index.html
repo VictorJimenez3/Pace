@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calendar App</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .user-info img {
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+        }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #357ae8;
+        }
+    </style>
+</head>
+<body>
+    <h1>📅 Calendar App with Firebase</h1>
+    
+    {% if logged_in %}
+        <div class="user-info">
+            <img src="{{ user.picture }}" alt="Profile">
+            <div>
+                <h3>{{ user.name }}</h3>
+                <p>{{ user.email }}</p>
+            </div>
+        </div>
+        <a href="{{ url_for('calendar') }}"><button>View Calendar</button></a>
+        
+        <!-- Voice Recording Section -->
+        <div style="margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+            <h3>🎤 Voice Recording</h3>
+            <button id="recordBtn">🎤 Start Recording</button>
+            <button id="stopBtn" disabled style="background: #dc4e41;">⏹️ Stop Recording</button>
+            <div id="status" style="margin: 10px 0; font-weight: bold;"></div>
+            <div id="transcription" style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; min-height: 40px;"></div>
+            <button id="viewTranscriptionsBtn" style="background: #34a853;">📋 View All Transcriptions</button>
+            <div id="transcriptionsList" style="margin-top: 15px;"></div>
+        </div>
+        
+        <a href="{{ url_for('logout') }}"><button>Logout</button></a>
+    {% else %}
+        <p>Sign in with Google to access your calendar</p>
+        <a href="{{ url_for('login') }}"><button>🔐 Login with Google</button></a>
+    {% endif %}
+
+    {% if logged_in %}
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+        const transcriptionDiv = document.getElementById('transcription');
+        const viewTranscriptionsBtn = document.getElementById('viewTranscriptionsBtn');
+        const transcriptionsList = document.getElementById('transcriptionsList');
+
+        recordBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+        viewTranscriptionsBtn.addEventListener('click', loadTranscriptions);
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = sendAudioToServer;
+
+                mediaRecorder.start();
+                
+                recordBtn.disabled = true;
+                stopBtn.disabled = false;
+                status.textContent = '🔴 Recording...';
+                status.style.color = 'red';
+                transcriptionDiv.innerHTML = '';
+            } catch (error) {
+                status.textContent = 'Error accessing microphone: ' + error.message;
+                status.style.color = 'red';
+            }
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            
+            recordBtn.disabled = false;
+            stopBtn.disabled = true;
+            status.textContent = '⏳ Processing transcription...';
+            status.style.color = 'orange';
+        }
+
+        async function sendAudioToServer() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.wav');
+
+            try {
+                const response = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    transcriptionDiv.innerHTML = `
+                        <p><strong>📝 Transcription:</strong></p>
+                        <p style="font-style: italic;">"${result.text}"</p>
+                        <p style="font-size: 12px; color: #666;">
+                            Saved at: ${new Date(result.timestamp).toLocaleString()}<br>
+                            Language: ${result.language} | Email: ${result.email}
+                        </p>
+                    `;
+                    status.textContent = '✅ Transcription complete and saved to database!';
+                    status.style.color = 'green';
+                } else {
+                    throw new Error(result.error || 'Unknown error');
+                }
+            } catch (error) {
+                status.textContent = '❌ Error: ' + error.message;
+                status.style.color = 'red';
+            }
+        }
+
+        async function loadTranscriptions() {
+            try {
+                viewTranscriptionsBtn.textContent = '⏳ Loading...';
+                const response = await fetch('/api/transcriptions');
+                const transcriptions = await response.json();
+                
+                if (response.ok) {
+                    if (transcriptions.length === 0) {
+                        transcriptionsList.innerHTML = '<p style="color: #666;">No transcriptions found.</p>';
+                    } else {
+                        transcriptionsList.innerHTML = `
+                            <h4>📋 Your Transcriptions (${transcriptions.length})</h4>
+                            ${transcriptions.map((t, index) => `
+                                <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 4px; background: white;">
+                                    <p><strong>#${index + 1}</strong> - ${new Date(t.created_at).toLocaleString()}</p>
+                                    <p style="font-style: italic; margin: 5px 0;">"${t.text}"</p>
+                                    <p style="font-size: 12px; color: #666;">Language: ${t.language}</p>
+                                </div>
+                            `).join('')}
+                        `;
+                    }
+                    viewTranscriptionsBtn.textContent = '📋 View All Transcriptions';
+                } else {
+                    throw new Error(transcriptions.error || 'Failed to load transcriptions');
+                }
+            } catch (error) {
+                transcriptionsList.innerHTML = `<p style="color: red;">❌ Error loading transcriptions: ${error.message}</p>`;
+                viewTranscriptionsBtn.textContent = '📋 View All Transcriptions';
+            }
+        }
+    </script>
+    {% endif %}
+</body>
+</html>
