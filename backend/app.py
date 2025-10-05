@@ -9,7 +9,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import google.auth.transport.requests
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, firestore
 import os
 import datetime
 from functools import wraps
@@ -23,6 +23,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Firebase Admin SDK setup
 cred = credentials.Certificate(os.path.join(BASE_DIR, 'firebase-adminsdk.json'))
 firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 # Google OAuth 2.0 configuration
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Remove in production!
@@ -142,12 +143,15 @@ def calendar():
     # Build calendar service
     service = build('calendar', 'v3', credentials=credentials)
     
-    # Get upcoming events
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    # Get events from 1 month past to 1 month future
+    now = datetime.datetime.utcnow()
+    time_min = (now - datetime.timedelta(days=30)).isoformat() + 'Z'
+    time_max = (now + datetime.timedelta(days=30)).isoformat() + 'Z'
+    
     events_result = service.events().list(
         calendarId='primary',
-        timeMin=now,
-        maxResults=20,
+        timeMin=time_min,
+        timeMax=time_max,
         singleEvents=True,
         orderBy='startTime'
     ).execute()
@@ -162,22 +166,39 @@ def calendar():
 @app.route('/api/events', methods=['GET'])
 @login_required
 def get_events():
-    """API endpoint to get calendar events"""
+    """Get calendar events and store in Firebase"""
     credentials = Credentials(**session['credentials'])
     service = build('calendar', 'v3', credentials=credentials)
     
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
+    # Get events from 1 month past to 1 month future
+    now = datetime.datetime.utcnow()
+    time_min = (now - datetime.timedelta(days=30)).isoformat() + 'Z'
+    time_max = (now + datetime.timedelta(days=30)).isoformat() + 'Z'
+    
     events_result = service.events().list(
         calendarId='primary',
-        timeMin=now,
-        maxResults=20,
+        timeMin=time_min,
+        timeMax=time_max,
         singleEvents=True,
         orderBy='startTime'
     ).execute()
     
-    return jsonify(events_result.get('items', []))
+    events = events_result.get('items', [])
+    
+    # Store in Firebase for this user
+    user_uid = session.get('firebase_uid')
+    if user_uid and events:
+        # Store events in user's document
+        user_ref = db.collection('users').document(user_uid)
+        user_ref.set({
+            'events': events,
+            'last_sync': datetime.datetime.utcnow(),
+            'email': session.get('user_info', {}).get('email')
+        }, merge=True)
+    
+    return jsonify(events)
 
-
+#likely need an agent to schedule events properly 
 @app.route('/api/events/add', methods=['POST'])
 @login_required
 def add_event():
