@@ -16,8 +16,12 @@ from functools import wraps
 from io import BytesIO
 from elevenlabs.client import ElevenLabs
 from dotenv import load_dotenv
+import google.generativeai as genai
 
 load_dotenv()
+
+# Configure Gemini API
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this'  # Change this!
@@ -403,21 +407,375 @@ def get_transcriptions():
         return jsonify({'error': str(e)}), 500
 
 
+# ============================================================================
+# HELPER FUNCTIONS FOR LLM DATA GATHERING
+# ============================================================================
+
+def get_user_transcriptions_text(user_uid, limit=10):
+    """Fetch recent transcription texts for the user."""
+    try:
+        user_ref = db.collection('users').document(user_uid)
+        transcriptions_ref = user_ref.collection('transcriptions').order_by(
+            'created_at', direction=firestore.Query.DESCENDING
+        ).limit(limit)
+        
+        texts = []
+        for doc in transcriptions_ref.stream():
+            data = doc.to_dict()
+            if data.get('text'):
+                texts.append(data['text'])
+        return texts
+    except Exception as e:
+        print(f"Error fetching transcriptions: {e}")
+        return []
+
+
+def get_user_calendar_events(credentials_dict, days_ahead=7):
+    """Fetch upcoming calendar events."""
+    try:
+        credentials = Credentials(**credentials_dict)
+        service = build('calendar', 'v3', credentials=credentials)
+        
+        now = datetime.datetime.utcnow()
+        time_min = now.isoformat() + 'Z'
+        time_max = (now + datetime.timedelta(days=days_ahead)).isoformat() + 'Z'
+        
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        return events_result.get('items', [])
+    except Exception as e:
+        print(f"Error fetching calendar events: {e}")
+        return []
+
+
+def count_events_by_day(events):
+    """Count events per day for calendar density analysis."""
+    day_counts = {}
+    for event in events:
+        start = event.get('start', {})
+        date_str = start.get('dateTime', start.get('date', ''))
+        if date_str:
+            day = date_str.split('T')[0]
+            day_counts[day] = day_counts.get(day, 0) + 1
+    return day_counts
+
+
+# ============================================================================
+# LLM 1: ASSISTANT INSIGHTS (Generic)
+# Pages: /vent AND /stress-check
+# ============================================================================
+
 @app.route('/api/insights', methods=['POST'])
 @login_required
 def get_insights():
-    """Return placeholder LLM-style insights for different focus areas."""
-    payload = request.json or {}
-    topic = payload.get('topic', 'general')
-    hints = payload.get('inputs', {})
+    """LLM 1: Generate generic actionable tips based on vent transcriptions or stress scores."""
+    try:
+        payload = request.json or {}
+        topic = payload.get('topic', 'general')
+        inputs = payload.get('inputs', {})
+        user_uid = session.get('firebase_uid')
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        if topic == 'vent':
+            # Get recent transcriptions
+            transcriptions = get_user_transcriptions_text(user_uid, limit=5)
+            
+            if not transcriptions:
+                return jsonify({
+                    'topic': topic,
+                    'suggestions': ["Start by recording your first reflection to get personalized insights."]
+                })
+            
+            prompt = f"""You are a compassionate mental wellness assistant. Based on the user's recent voice reflections below, provide 3-5 short, actionable, and empathetic tips to help them manage their emotions and maintain well-being.
 
-    suggestions = SAMPLE_INSIGHTS.get(topic, SAMPLE_INSIGHTS['general'])
+Recent reflections:
+{chr(10).join(f"- {t}" for t in transcriptions)}
 
-    return jsonify({
-        'topic': topic,
-        'inputs': hints,
-        'suggestions': suggestions
-    })
+Provide ONLY a numbered list of 3-5 tips, each on a new line. Keep each tip to 1-2 sentences. Be supportive and practical."""
+
+        elif topic == 'stress':
+            # Use stress score and notes from inputs
+            stress_level = inputs.get('stress', 0)
+            overwhelm = inputs.get('overwhelm', 0)
+            energy = inputs.get('energy', 0)
+            notes = inputs.get('notes', '')
+            
+            score = round(((stress_level + overwhelm + (10 - energy)) / 30) * 100)
+            
+            prompt = f"""You are a mental wellness assistant. A user just completed a stress check with the following results:
+
+Stress Score: {score}/100
+Stress Level: {stress_level}/10
+Overwhelm Level: {overwhelm}/10
+Energy Level: {energy}/10
+Additional Notes: {notes if notes else "None provided"}
+
+Provide 3-5 short, actionable tips to help them manage their current stress level. Keep each tip to 1-2 sentences. Be practical and supportive.
+
+Provide ONLY a numbered list of 3-5 tips, each on a new line."""
+
+        else:
+            # Generic fallback
+            prompt = """Provide 3 general wellness tips for maintaining balance and managing stress. Keep each tip to 1-2 sentences.
+
+Provide ONLY a numbered list of 3 tips, each on a new line."""
+        
+        response = model.generate_content(prompt)
+        suggestions_text = response.text.strip()
+        
+        # Parse numbered list into array
+        suggestions = []
+        for line in suggestions_text.split('\n'):
+            line = line.strip()
+            # Remove numbering (1. 2. etc) or bullets
+            if line and (line[0].isdigit() or line.startswith('-') or line.startswith('•')):
+                # Strip leading number/bullet
+                cleaned = line.lstrip('0123456789.-•* ').strip()
+                if cleaned:
+                    suggestions.append(cleaned)
+        
+        return jsonify({
+            'topic': topic,
+            'suggestions': suggestions if suggestions else [suggestions_text]
+        })
+        
+    except Exception as e:
+        print(f"Error generating insights: {e}")
+        return jsonify({
+            'topic': topic,
+            'suggestions': SAMPLE_INSIGHTS.get(topic, SAMPLE_INSIGHTS['general'])
+        })
+
+
+# ============================================================================
+# LLM 2: PACING ADVICE GENERATOR
+# Page: /pacing-advice
+# ============================================================================
+
+@app.route('/api/pacing-advice', methods=['POST'])
+@login_required
+def generate_pacing_advice():
+    """LLM 2: Generate personalized pacing paragraphs for focus/recovery/connection rituals."""
+    try:
+        user_uid = session.get('firebase_uid')
+        credentials_dict = session.get('credentials')
+        
+        # Gather all inputs
+        transcriptions = get_user_transcriptions_text(user_uid, limit=10)
+        events = get_user_calendar_events(credentials_dict, days_ahead=7)
+        event_density = count_events_by_day(events)
+        
+        # Get latest stress score from request or default
+        payload = request.json or {}
+        latest_stress = payload.get('stress_score', 50)
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        prompt = f"""You are a productivity and wellness coach. Help the user design their week intelligently based on the following data:
+
+VOICE REFLECTIONS:
+{chr(10).join(f"- {t}" for t in transcriptions) if transcriptions else "No recent reflections"}
+
+CALENDAR OVERVIEW (next 7 days):
+- Total upcoming events: {len(events)}
+- Busiest days: {', '.join(f"{day} ({count} events)" for day, count in sorted(event_density.items(), key=lambda x: x[1], reverse=True)[:3]) if event_density else "No events scheduled"}
+
+STRESS LEVEL: {latest_stress}/100
+
+Based on this, create a personalized pacing plan with three sections:
+
+1. **Focus Rituals**: Specific strategies for deep work and concentration
+2. **Recovery Rituals**: Specific ways to recharge and prevent burnout
+3. **Connection Rituals**: Specific ways to maintain relationships and community
+
+For each section, write a SHORT paragraph (2-4 sentences) with concrete, actionable advice tailored to their situation. Consider their stress level, calendar density, and recent reflections.
+
+Format your response as:
+**Focus Rituals**
+[paragraph]
+
+**Recovery Rituals**
+[paragraph]
+
+**Connection Rituals**
+[paragraph]"""
+
+        response = model.generate_content(prompt)
+        advice_text = response.text.strip()
+        
+        # Parse sections
+        sections = {
+            'focus': '',
+            'recovery': '',
+            'connection': ''
+        }
+        
+        # Simple parsing
+        current_section = None
+        lines = advice_text.split('\n')
+        for line in lines:
+            line_lower = line.lower()
+            if 'focus' in line_lower and '**' in line:
+                current_section = 'focus'
+            elif 'recovery' in line_lower and '**' in line:
+                current_section = 'recovery'
+            elif 'connection' in line_lower and '**' in line:
+                current_section = 'connection'
+            elif current_section and line.strip() and not line.startswith('**'):
+                sections[current_section] += line.strip() + ' '
+        
+        return jsonify({
+            'focus': sections['focus'].strip() or 'Block dedicated time for deep work daily.',
+            'recovery': sections['recovery'].strip() or 'Schedule regular breaks between tasks.',
+            'connection': sections['connection'].strip() or 'Make time for meaningful relationships.',
+            'raw_advice': advice_text
+        })
+        
+    except Exception as e:
+        print(f"Error generating pacing advice: {e}")
+        return jsonify({
+            'focus': 'Block a protected hour for deep work, then follow it with a deliberate pause.',
+            'recovery': 'Pair high-effort tasks with restorative breaks to avoid compounding stress.',
+            'connection': 'Schedule time for meaningful connections with colleagues or friends.',
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# LLM 3: SMART BREAK SCHEDULER
+# Page: /calendar
+# ============================================================================
+
+@app.route('/api/smart-breaks', methods=['POST'])
+@login_required
+def generate_smart_breaks():
+    """LLM 3: Generate and optionally schedule smart breaks based on stress and calendar."""
+    try:
+        user_uid = session.get('firebase_uid')
+        credentials_dict = session.get('credentials')
+        payload = request.json or {}
+        
+        # Gather inputs
+        transcriptions = get_user_transcriptions_text(user_uid, limit=5)
+        events = get_user_calendar_events(credentials_dict, days_ahead=7)
+        event_density = count_events_by_day(events)
+        
+        # Get stress level
+        stress_score = payload.get('stress_score', 50)
+        auto_schedule = payload.get('auto_schedule', False)
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        prompt = f"""You are a smart calendar assistant. Based on the user's data, suggest break times for the next 7 days.
+
+STRESS LEVEL: {stress_score}/100
+UPCOMING EVENTS: {len(events)} events in next 7 days
+CALENDAR DENSITY: {event_density}
+
+RECENT REFLECTIONS:
+{chr(10).join(f"- {t[:100]}..." for t in transcriptions) if transcriptions else "No recent reflections"}
+
+RULES:
+- High stress (>66): Suggest 4-5 breaks per day
+- Medium stress (33-66): Suggest 2-3 breaks per day
+- Low stress (<33): Suggest 1-2 breaks per day
+- Avoid scheduling between 10pm-7am
+- Types: "Recovery Break" (15-30 min), "Focus Sprint" (60-90 min), "Connection Block" (30-60 min)
+- Schedule breaks between existing events when possible
+
+Provide a JSON array of break suggestions with this format:
+[
+  {{
+    "type": "Recovery Break",
+    "duration_hours": 0.5,
+    "hours_from_now": 2,
+    "description": "Brief description of what to do"
+  }}
+]
+
+Provide ONLY valid JSON, no other text."""
+
+        response = model.generate_content(prompt)
+        response_text = response.text.strip()
+        
+        # Extract JSON from response
+        import json
+        import re
+        
+        # Try to find JSON array in response
+        json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+        if json_match:
+            breaks_data = json.loads(json_match.group())
+        else:
+            # Fallback: create default breaks
+            num_breaks = 2 if stress_score < 33 else (3 if stress_score < 66 else 4)
+            breaks_data = []
+            for i in range(num_breaks):
+                breaks_data.append({
+                    "type": "Recovery Break" if i % 2 == 0 else "Focus Sprint",
+                    "duration_hours": 0.5,
+                    "hours_from_now": 8 + (i * 3),
+                    "description": "Take a mindful break to recharge"
+                })
+        
+        # Filter out breaks that would be scheduled in night hours (10pm-7am)
+        now = datetime.datetime.utcnow()
+        filtered_breaks = []
+        for break_item in breaks_data:
+            scheduled_time = now + datetime.timedelta(hours=break_item['hours_from_now'])
+            hour = scheduled_time.hour
+            if 7 <= hour < 22:  # Only between 7am-10pm
+                filtered_breaks.append(break_item)
+        
+        # Auto-schedule if requested
+        scheduled_events = []
+        if auto_schedule and filtered_breaks:
+            credentials = Credentials(**credentials_dict)
+            service = build('calendar', 'v3', credentials=credentials)
+            
+            for break_item in filtered_breaks[:5]:  # Limit to 5 auto-scheduled breaks
+                try:
+                    start_time = now + datetime.timedelta(hours=break_item['hours_from_now'])
+                    end_time = start_time + datetime.timedelta(hours=break_item['duration_hours'])
+                    
+                    event = {
+                        'summary': f"🌿 {break_item['type']}",
+                        'description': break_item.get('description', ''),
+                        'start': {
+                            'dateTime': start_time.isoformat() + 'Z',
+                            'timeZone': 'UTC',
+                        },
+                        'end': {
+                            'dateTime': end_time.isoformat() + 'Z',
+                            'timeZone': 'UTC',
+                        },
+                    }
+                    
+                    created = service.events().insert(calendarId='primary', body=event).execute()
+                    scheduled_events.append(created.get('id'))
+                except Exception as e:
+                    print(f"Error scheduling break: {e}")
+        
+        return jsonify({
+            'suggestions': filtered_breaks,
+            'scheduled_count': len(scheduled_events),
+            'scheduled_ids': scheduled_events,
+            'stress_level': stress_score
+        })
+        
+    except Exception as e:
+        print(f"Error generating smart breaks: {e}")
+        return jsonify({
+            'suggestions': [],
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 (function () {
+	// Updated: Fixed LLM endpoint calls - Oct 5, 2025
 	document.addEventListener('DOMContentLoaded', () => {
 		const page = document.body.dataset.page;
 
@@ -184,6 +185,12 @@
 				},
 				body: JSON.stringify({ topic, inputs: payload }),
 			});
+
+			// Check if redirected to login (HTML response)
+			const contentType = response.headers.get('content-type') || '';
+			if (!contentType.includes('application/json')) {
+				throw new Error('Please log in to view insights');
+			}
 
 			const data = await response.json();
 			if (!response.ok) {
